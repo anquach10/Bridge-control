@@ -1,0 +1,316 @@
+//  Drawbridge Motor Control
+
+int TRIG_PIN = 2;
+const int ECHO_PIN = 3;
+int RED_BOTH = 4;
+int GREEN_BOTH = 7;
+const int BUZZER = 8 ;
+
+// LEFT L298N board
+int L_ENA = 5;
+int L_ENB = 6;
+int L_IN1 = 9;
+int L_IN2 = 13;
+int L_IN3 = A1;
+int L_IN4 = A2;
+
+// RIGHT L298N board
+int R_ENA = 11;
+int R_ENB = 10;
+int R_IN1 = A0;
+int R_IN2 = A3;
+int R_IN3 = A4;
+int R_IN4 = A5;
+
+// Settings
+int OPEN_PWM = 170;
+int CLOSE_PWM = 160;
+
+int RED_BLINK_TIMES = 5;
+int GREEN_BLINK_TIMES = 5;
+int BLINK_DELAY_MS = 250;
+
+int OPEN_TIME_MS = 6000;
+int HOLD_OPEN_MS = 20000;
+int CLOSE_TIME_MS = 6000;
+
+bool LEFT_OPEN_FORWARD = true;
+bool RIGHT_OPEN_FORWARD = true;
+
+bool busy = false;
+
+
+// Buzzer
+void buzzTwice() {
+  for(int i = 0; i < 2; i++) {
+    digitalWrite(BUZZER, HIGH);
+    delay(400);
+    digitalWrite(BUZZER, LOW);
+    delay(200);
+  }
+}
+
+
+long getDistance() {
+
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
+
+  if(duration == 0){
+    return -1;
+  }
+
+  long distance = duration * 0.034 / 2;
+
+  Serial.print("distant in cm: ");
+  Serial.println(distance);
+
+  return distance;
+}
+
+
+void waitUntilBoatLeaves() {
+
+  int clearCount = 0;
+  unsigned long start = millis(); //I don't want it to jam
+
+  while(clearCount < 20 && millis() - start < 10000) {
+
+    long distance = getDistance();
+
+    if(distance < 40 && distance > 0) {
+      clearCount = 0;
+    }
+    else {
+      clearCount++;
+    }
+
+    delay(80);
+  }
+}
+
+
+// LED helpers
+void setRed(bool on) {
+  digitalWrite(RED_BOTH, on);
+}
+
+void setGreen(bool on) {
+  digitalWrite(GREEN_BOTH, on);
+}
+
+
+// Motor helpers
+void stopBoard(int ENA, int ENB, int IN1, int IN2, int IN3, int IN4) {
+
+  analogWrite(ENA, 0);
+  analogWrite(ENB, 0);
+
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+}
+
+
+void forwardBoard(int pwm, int ENA, int ENB, int IN1, int IN2, int IN3, int IN4) {
+
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+
+  analogWrite(ENA, pwm);
+  analogWrite(ENB, pwm);
+}
+
+
+void reverseBoard(int pwm, int ENA, int ENB, int IN1, int IN2, int IN3, int IN4) {
+
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+
+  analogWrite(ENA, pwm);
+  analogWrite(ENB, pwm);
+}
+
+
+void stopAllMotors() {
+
+  stopBoard(L_ENA, L_ENB, L_IN1, L_IN2, L_IN3, L_IN4);
+  stopBoard(R_ENA, R_ENB, R_IN1, R_IN2, R_IN3, R_IN4);
+}
+
+
+// Bridge control
+void openBridge(int pwm) {
+
+  if (LEFT_OPEN_FORWARD == true) {
+    forwardBoard(pwm, L_ENA, L_ENB, L_IN1, L_IN2, L_IN3, L_IN4);
+  }
+
+  if (LEFT_OPEN_FORWARD == false) {
+    reverseBoard(pwm, L_ENA, L_ENB, L_IN1, L_IN2, L_IN3, L_IN4);
+  }
+
+  if (RIGHT_OPEN_FORWARD == true) {
+    forwardBoard(pwm, R_ENA, R_ENB, R_IN1, R_IN2, R_IN3, R_IN4);
+  }
+
+  if (RIGHT_OPEN_FORWARD == false) {
+    reverseBoard(pwm, R_ENA, R_ENB, R_IN1, R_IN2, R_IN3, R_IN4);
+  }
+}
+
+
+void closeBridge(int pwm) {
+
+  if (LEFT_OPEN_FORWARD == true) {
+    reverseBoard(pwm, L_ENA, L_ENB, L_IN1, L_IN2, L_IN3, L_IN4);
+  }
+
+  if (LEFT_OPEN_FORWARD == false) {
+    forwardBoard(pwm, L_ENA, L_ENB, L_IN1, L_IN2, L_IN3, L_IN4);
+  }
+
+  if (RIGHT_OPEN_FORWARD == true) {
+    reverseBoard(pwm, R_ENA, R_ENB, R_IN1, R_IN2, R_IN3, R_IN4);
+  }
+
+  if (RIGHT_OPEN_FORWARD == false) {
+    forwardBoard(pwm, R_ENA, R_ENB, R_IN1, R_IN2, R_IN3, R_IN4);
+  }
+}
+
+
+// Blink helpers
+void blinkRed(int times) {
+
+  int i = 0;
+
+  while (i < times) {
+
+    setRed(true);
+    delay(BLINK_DELAY_MS);
+
+    setRed(false);
+    delay(BLINK_DELAY_MS);
+
+    i = i + 1;
+  }
+}
+
+
+void blinkGreen(int times) {
+
+  int i = 0;
+
+  while (i < times) {
+
+    setGreen(true);
+    delay(BLINK_DELAY_MS);
+
+    setGreen(false);
+    delay(BLINK_DELAY_MS);
+
+    i = i + 1;
+  }
+}
+
+
+// Sequence
+void runSequenceOnce() {
+
+  busy = true;
+
+  setGreen(false);
+
+  blinkRed(RED_BLINK_TIMES);
+
+  setRed(true);
+
+  buzzTwice();
+
+  openBridge(OPEN_PWM);
+
+  waitUntilBoatLeaves();
+
+  stopAllMotors();
+
+  setRed(false);
+
+  buzzTwice();
+
+  closeBridge(CLOSE_PWM);
+
+  delay(CLOSE_TIME_MS);
+
+  stopAllMotors();
+
+  blinkGreen(GREEN_BLINK_TIMES);
+
+  setGreen(true);
+
+  busy = false;
+}
+
+
+// Setup
+void setup() {
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  pinMode(BUZZER, OUTPUT);
+  digitalWrite(BUZZER, LOW);
+
+  pinMode(RED_BOTH, OUTPUT);
+  pinMode(GREEN_BOTH, OUTPUT);
+
+  pinMode(L_ENA, OUTPUT);
+  pinMode(L_ENB, OUTPUT);
+  pinMode(L_IN1, OUTPUT);
+  pinMode(L_IN2, OUTPUT);
+  pinMode(L_IN3, OUTPUT);
+  pinMode(L_IN4, OUTPUT);
+
+  pinMode(R_ENA, OUTPUT);
+  pinMode(R_ENB, OUTPUT);
+  pinMode(R_IN1, OUTPUT);
+  pinMode(R_IN2, OUTPUT);
+  pinMode(R_IN3, OUTPUT);
+  pinMode(R_IN4, OUTPUT);
+
+  stopAllMotors();
+
+  setRed(false);
+  setGreen(true);
+
+  Serial.begin(9600);
+}
+
+
+// Loop
+void loop() {
+
+  long distance = getDistance();
+
+  if(distance < 30 && distance > 0){
+
+    if(busy == false){
+
+      runSequenceOnce();
+
+    }
+  }
+
+  delay(100);
+}
